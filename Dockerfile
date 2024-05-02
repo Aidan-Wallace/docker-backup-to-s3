@@ -1,11 +1,12 @@
 FROM docker.io/library/python:alpine
-MAINTAINER <josiah.ritchie@gmail.com>
 
-RUN apk update && \
-    apk add py-pip apk-cron curl openssl bash && \
-    pip install -U pip && \
-    pip install awscli && \
-    rm -rf /var/cache/apk/*
+RUN apk update
+RUN apk add py-pip apk-cron curl openssl bash
+
+RUN pip install -U pip
+RUN pip install awscli
+
+RUN rm -rf /var/cache/apk/*
 
 ADD app /app
 ADD Dockerfile /

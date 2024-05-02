@@ -2,25 +2,22 @@
 
 test -z $DEBUG || set -x
 
-
-
 dateISO() {
-  date -u  +"%Y-%m-%dT%H:%M:%SZ"
+  date -u +"%Y-%m-%dT%H:%M:%SZ"
 }
-
 
 runbackup() {
   started=$(date +%s)
-  startedAt=$(date -u -d @$started  +"%Y-%m-%dT%H:%M:%SZ")
+  startedAt=$(date -u -d @$started +"%Y-%m-%dT%H:%M:%SZ")
 
   printf "{\"backup\":{\"state\":\"start\", \"startedAt\":\"%s\", \"message\":\"%s\"}}\n" "$startedAt" "Starting backup from: $DATA_PATH to $S3_PATH/$s3name"
 
   if [ "$PREFIX" ]; then
-      name="$PREFIX-$startedAt.tgz"
+    name="$PREFIX-$startedAt.tgz"
   else
-      name="$startedAt.tgz"
+    name="$startedAt.tgz"
   fi
-  s3name=$name.aes
+  s3name=$name
 
   # run pre-backup command if specified
   if [ ! -z "$PRE_BACKUP_COMMAND" ]; then
@@ -29,34 +26,35 @@ runbackup() {
     printf "{\"backup\":{\"state\":\"pre-backup-command-run\", \"result\": \"%s\", \"exit-code\":\"%s\"}}\n" "$pre_cmd_output" "$?"
   fi
 
-  tar czf /tmp/$name  -C $DATA_PATH .
-  openssl enc -aes-256-cbc -md sha512 -pbkdf2 -iter 100100 -salt -pass "pass:${AES_PASSPHRASE}" -in /tmp/$name -out /tmp/$s3name
+  tar czf /tmp/$name -C $DATA_PATH .
 
-  output=$( aws s3 cp $PARAMS "/tmp/$s3name" "$S3_PATH/$s3name" 2>&1 )
+  AWS_ACCESS_KEY_ID=$(echo -n "$AWS_ACCESS_KEY_ID" | tr -d $'\n') # k8s secrets adds a \n for some reason
+
+  # openssl enc -aes-256-cbc -md sha512 -pbkdf2 -iter 100100 -salt -pass "pass:${AES_PASSPHRASE}" -in /tmp/$name -out /tmp/$s3name
+  # output=$(aws s3 cp $PARAMS "/tmp/$s3name" "$S3_PATH/$s3name" 2>&1)
+  output=$(aws s3 cp $PARAMS "/tmp/$name" "$S3_PATH/$name" 2>&1)
+
   code=$?
   if [ $code ]; then
-      result="success"
+    result="success"
   else
-      result="error:$code"
+    result="error:$code"
   fi
 
   rm -f /tmp/$name
   rm -f /tmp/$s3name
 
   finished=$(date +%s)
-  duration=$(( finished - started ))
+  duration=$((finished - started))
 
-  printf "{\"backup\":{\"state\":\"%s\" \"startedAt\":\"%s\", \"duration\":\"%i seconds\", \"name\":\"%s/%s\", \"output\":\"%s\"}}\n"  "$result" "$startedAt" "$duration" "$S3_PATH" "$s3name" "$output"
+  printf "{\"backup\":{\"state\":\"%s\" \"startedAt\":\"%s\", \"duration\":\"%i seconds\", \"name\":\"%s/%s\", \"output\":\"%s\"}}\n" "$result" "$startedAt" "$duration" "$S3_PATH" "$s3name" "$output"
 }
-
-
 
 (
   flock -n 200 || exit 1
 
-  exec &> >( tee -a ${LOGFILE:-/var/log/backup.log} )
-  # exec 2>&1 
+  exec &> >(tee -a ${LOGFILE:-/var/log/backup.log})
+  # exec 2>&1
 
   runbackup
-) 200> /var/lock/backup
-
+) 200>/var/lock/backup
